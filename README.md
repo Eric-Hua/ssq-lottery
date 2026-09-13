@@ -40,6 +40,15 @@ open('data.js','w').write('window.SSQ_DATA = [\n' + '\n'.join(lines) + '\n];\n')
 EOF
 ```
 
+## 安装到手机 / 桌面(PWA)
+
+本站是一个可安装的 PWA:
+
+- **Android / 桌面 Chrome、Edge**:打开站点后,点击页面上方的「📲 安装到桌面」,或用地址栏右侧的安装图标
+- **iPhone / iPad Safari**:点「分享」→「添加到主屏幕」
+
+安装后能全屏运行(无浏览器地址栏),并且**离线也能用** —— Service Worker 会缓存应用外壳与开奖数据。
+
 ## 部署
 
 本仓库通过 GitHub Actions 自动部署到 GitHub Pages:
@@ -47,6 +56,7 @@ EOF
 1. Pages 的发布源设置为 **GitHub Actions**(仓库 Settings → Pages → Source)
 2. 推送到 `main` 分支后,`.github/workflows/pages.yml` 会自动把仓库根目录发布为静态站点
 3. 也可在 Actions 页面手动触发(`workflow_dispatch`)
+
 ## 免责声明
 
 彩票开奖为独立随机事件,任何历史数据、公式、统计模型都无法提高中奖概率。

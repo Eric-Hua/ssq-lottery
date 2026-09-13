@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="双色球选号助手：常用杀号公式、历史开奖记录、带概率统计的推荐号码、随机生成号码。仅供娱乐参考。">
 <title>双色球选号助手 · 杀号 · 推荐 · 历史 · 统计</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0e1120">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="双色球">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<meta name="mobile-web-app-capable" content="yes">
 <style>
 :root{
   --bg:#0e1120; --bg2:#111530; --card:#171c36; --card2:#1c2242; --line:rgba(255,255,255,.09);
@@ -263,7 +271,7 @@ footer b{color:var(--gold)}
         <div>
           <h1>双色球选号助手</h1>
           <p>杀号公式 · 带概率推荐 · 历史开奖 · 随机机选</p>
-          <div><span class="badge-chip chip-gold">仅供娱乐参考</span> <span class="badge-chip">数据来源：中国福彩官网(最新 500 期)</span></div>
+          <div><span class="badge-chip chip-gold">仅供娱乐参考</span> <span class="badge-chip">数据来源：中国福彩官网(最新 500 期)</span> <button class="btn btn-blue" id="installBtn" style="display:none;font-size:12px;padding:5px 12px;margin-left:6px;vertical-align:middle">📲 安装到桌面</button><span class="badge-chip" id="iosHint" style="display:none">分享 → 添加到主屏幕</span></div>
         </div>
       </div>
       <div class="lastdraw" id="lastDrawBox"></div>
@@ -1406,6 +1414,41 @@ function randomOne(){
   renderKill();
   renderStats();
   $('#histRange').textContent = DATA[0][1] + ' ~ ' + DATA[N-1][1] + ' · ' + N + ' 期';
+})();
+
+/* ================= PWA:Service Worker + 安装到桌面 ================= */
+(function pwa(){
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  // 注册 Service Worker(仅 http/https;file:// 下跳过,不影响双击本地打开)
+  if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
+    window.addEventListener('load', ()=>{
+      navigator.serviceWorker.register('./sw.js').catch(()=>{});
+    });
+  }
+  const btn = $('#installBtn'), hint = $('#iosHint');
+  let deferred = null;
+  window.addEventListener('beforeinstallprompt', (e)=>{
+    e.preventDefault(); deferred = e;
+    if(btn) btn.style.display = 'inline-flex';
+  });
+  if(btn){
+    btn.addEventListener('click', async ()=>{
+      if(!deferred){ toast('请用浏览器菜单里的「安装应用 / 添加到主屏幕」'); return; }
+      deferred.prompt();
+      let outcome = 'dismissed';
+      try { const choice = await deferred.userChoice; outcome = choice.outcome; } catch(err){}
+      deferred = null; btn.style.display = 'none';
+      if(outcome === 'accepted') toast('已添加到桌面 ✓');
+    });
+  }
+  window.addEventListener('appinstalled', ()=>{
+    if(btn) btn.style.display = 'none';
+    toast('安装完成,可从桌面直接打开');
+  });
+  // iOS Safari 不支持 beforeinstallprompt,给出文字引导
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  if(hint && isIOS && !standalone) hint.style.display = 'inline-block';
+  if(standalone && btn) btn.style.display = 'none';
 })();
 </script>
 </body>

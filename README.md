@@ -1,5 +1,7 @@
 # 双色球选号助手
 
+**🌐 线上地址：<https://eric-hua.github.io/ssq-lottery/>**
+
 一个纯前端(零依赖、可离线)的双色球选号工具,包含：
 
 | 功能 | 说明 |
@@ -38,6 +40,13 @@ open('data.js','w').write('window.SSQ_DATA = [\n' + '\n'.join(lines) + '\n];\n')
 EOF
 ```
 
+## 部署
+
+本仓库通过 GitHub Actions 自动部署到 GitHub Pages:
+
+1. Pages 的发布源设置为 **GitHub Actions**(仓库 Settings → Pages → Source)
+2. 推送到 `main` 分支后,`.github/workflows/pages.yml` 会自动把仓库根目录发布为静态站点
+3. 也可在 Actions 页面手动触发(`workflow_dispatch`)
 ## 免责声明
 
 彩票开奖为独立随机事件,任何历史数据、公式、统计模型都无法提高中奖概率。

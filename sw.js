@@ -40,8 +40,9 @@ self.addEventListener('fetch', (e) => {
   try { url = new URL(req.url); } catch (err) { return; }
   if (url.origin !== self.location.origin) return;
 
-  // 页面导航:网络优先
-  if (req.mode === 'navigate') {
+  // 页面导航 + 开奖数据:网络优先(保证更新后立即生效,离线时回退缓存)
+  const isData = url.pathname.endsWith('/data.js');
+  if (req.mode === 'navigate' || isData) {
     e.respondWith(
       fetch(req)
         .then((res) => {

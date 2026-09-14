@@ -4,11 +4,12 @@
  *   - 其它同源资源: 缓存优先 + 后台更新(stale-while-revalidate)
  * 更新内容后建议把 CACHE 版本号 +1,以清理旧缓存。
  */
-const CACHE = "ssq-v1";
+const CACHE = "ssq-v2";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./data.js",
+  "./backtest.js",
   "./manifest.webmanifest",
   "./icon-192.png",
   "./icon-512.png",
@@ -45,7 +46,7 @@ self.addEventListener("fetch", (e) => {
   let url;
   try {
     url = new URL(req.url);
-  } catch (err) {
+  } catch {
     return;
   }
   if (url.origin !== self.location.origin) return;

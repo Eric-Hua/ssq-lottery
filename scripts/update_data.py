@@ -13,6 +13,7 @@
     python3 scripts/update_data.py            # 自动:尝试所有数据源
     python3 scripts/update_data.py --source mirror
 """
+
 from __future__ import annotations
 
 import argparse
@@ -116,7 +117,12 @@ def fetch_official() -> dict[int, Record]:
         issue = _norm_issue(row.get("code"))
         if issue is None:
             continue
-        rec = _norm_record(issue, str(row.get("date", "")), str(row.get("red", "")).split(","), row.get("blue"))
+        rec = _norm_record(
+            issue,
+            str(row.get("date", "")),
+            str(row.get("red", "")).split(","),
+            row.get("blue"),
+        )
         if rec:
             out[issue] = rec
     if not out:
@@ -132,7 +138,9 @@ def fetch_mirror() -> dict[int, Record]:
         issue = _norm_issue(row.get("issueNumber"))
         if issue is None:
             continue
-        rec = _norm_record(issue, row.get("drawDate"), row.get("redBalls"), row.get("blueBall"))
+        rec = _norm_record(
+            issue, row.get("drawDate"), row.get("redBalls"), row.get("blueBall")
+        )
         if rec:
             out[issue] = rec
     if not out:
@@ -177,12 +185,17 @@ def build_js(records: dict[int, Record]) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="更新双色球开奖数据")
-    parser.add_argument("--source", choices=["auto", "official", "mirror"], default="auto")
+    parser.add_argument(
+        "--source", choices=["auto", "official", "mirror"], default="auto"
+    )
     parser.add_argument("--attempts", type=int, default=3, help="每个数据源的重试次数")
     args = parser.parse_args()
 
-    chosen = SOURCES if args.source == "auto" else [s for s in SOURCES if
-                                                   (s[0] == "福彩官网") == (args.source == "official")]
+    chosen = (
+        SOURCES
+        if args.source == "auto"
+        else [s for s in SOURCES if (s[0] == "福彩官网") == (args.source == "official")]
+    )
 
     merged = load_existing()
     before = len(merged)
@@ -199,10 +212,18 @@ def main() -> int:
                 succeeded.append(f"{name}(+{len(added)})")
                 print(f"[ok] {name}:取到 {len(rows)} 期,其中新增 {len(added)} 期")
                 break
-            except (OSError, http.client.HTTPException, TimeoutError, ValueError) as exc:
+            except (
+                OSError,
+                http.client.HTTPException,
+                TimeoutError,
+                ValueError,
+            ) as exc:
                 last_error = exc
                 wait = min(5 * attempt, 20)
-                print(f"[warn] {name} 第 {attempt}/{args.attempts} 次失败: {exc} —— {wait}s 后重试", flush=True)
+                print(
+                    f"[warn] {name} 第 {attempt}/{args.attempts} 次失败: {exc} —— {wait}s 后重试",
+                    flush=True,
+                )
                 time.sleep(wait)
         else:
             errors.append(f"{name}: {last_error}")
@@ -224,7 +245,9 @@ def main() -> int:
         return 0
 
     OUT.write_text(new_content, encoding="utf-8")
-    print(f"[done] 已更新 data.js:{before} 期 -> {len(merged)} 期,最新 {max(merged)} 期 · 来源 {', '.join(succeeded)}")
+    print(
+        f"[done] 已更新 data.js:{before} 期 -> {len(merged)} 期,最新 {max(merged)} 期 · 来源 {', '.join(succeeded)}"
+    )
     return 0
 
 

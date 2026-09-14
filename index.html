@@ -256,6 +256,16 @@ canvas{width:100%;height:210px;display:block}
 }
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
+/* ---------- 公式回测 ---------- */
+.vtag{display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;border:1px solid transparent;white-space:nowrap}
+.vt-good{background:rgba(52,211,153,.14);color:var(--green);border-color:rgba(52,211,153,.35)}
+.vt-bad{background:rgba(244,63,94,.14);color:var(--red);border-color:rgba(244,63,94,.35)}
+.vt-warn-good{background:rgba(251,191,36,.13);color:var(--gold);border-color:rgba(251,191,36,.3)}
+.vt-warn-bad{background:rgba(251,146,60,.14);color:#fb923c;border-color:rgba(251,146,60,.35)}
+.vt-neutral{background:rgba(152,162,201,.12);color:var(--muted);border-color:var(--line)}
+.vt-warn{background:rgba(255,255,255,.06);color:var(--muted);border-color:var(--line)}
+#pane-backtest table.hist td:first-child{max-width:260px;white-space:normal}
+
 /* ---------- footer ---------- */
 footer{margin-top:10px;border-top:1px solid var(--line);padding:20px 0 38px;font-size:12px;color:var(--muted);text-align:center;line-height:1.9}
 footer b{color:var(--gold)}
@@ -285,6 +295,7 @@ footer b{color:var(--gold)}
     <div class="tab" data-pane="kill">✂️ 杀号公式<span class="tk">12红+7蓝</span></div>
     <div class="tab" data-pane="history">📜 历史开奖<span class="tk">500期</span></div>
     <div class="tab" data-pane="stats">📊 数据统计<span class="tk">频次/遗漏/走势</span></div>
+    <div class="tab" data-pane="backtest">🔬 公式回测<span class="tk">准确率/显著性</span></div>
   </div>
 </nav>
 
@@ -504,6 +515,36 @@ footer b{color:var(--gold)}
           <div class="hc-title"><span>💙 蓝球冷号 TOP8</span><span class="hc-tag cold">低频/大遗漏</span></div>
           <div id="blueColdList"></div>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 公式回测 ============ -->
+  <section class="pane" id="pane-backtest">
+    <div class="card">
+      <h3 class="blue"><span class="sec"></span>杀号公式回测 <span class="sub">用真实开奖数据检验每条公式,并与随机基线做显著性检验</span></h3>
+      <div id="btSummary"></div>
+      <div id="btRandomPanel" style="margin-top:16px"></div>
+      <div class="board-actions">
+        <button class="btn btn-blue" id="btCopyBtn">📋 复制为 Markdown 表格</button>
+      </div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <h3><span class="sec"></span>红球公式 <span class="sub">本站公式 + 你提供的公式</span></h3>
+      <div class="table-scroll"><table class="hist" id="btRedTable"></table></div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <h3><span class="sec"></span>蓝球公式 <span class="sub">本站公式 + 你提供的公式</span></h3>
+      <div class="table-scroll"><table class="hist" id="btBlueTable"></table></div>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <h3 class="gold"><span class="sec"></span>方法说明</h3>
+      <div class="model-note" style="border-top:none;padding-top:0;margin-top:0">
+        <b>回测方法</b>:对每个目标期 t,用「上期(t−1)」的数据算出该公式要杀的号码,再看目标期实际开出的号码里有没有被误杀。该期「杀对」= 杀掉的号码一个都没开出。<br>
+        <b>随机基线</b>:随机杀 k 个红球全杀对的概率 = C(33−k,6)/C(33,6);蓝球 = (16−k)/16。这是“不用任何公式”时的期望水平。<br>
+        <b>P 值</b>:精确二项检验(双侧),零假设为「该公式与随机杀号同分布」;需通过 Bonferroni 校正才算真显著(阈值见上方小结),未过校正的差异一律视为噪声。<br>
+        <b>数据</b>:用页面加载时的全部历史开奖数据实时计算 —— 每次自动更新开奖数据后,本页数字会随之变化。<br>
+        <b>边界处理</b>:公式算出的号码超出有效范围时丢弃;某期若无可杀号码则不计入参评期;并集按去重后的号码个数计算基线。
       </div>
     </div>
   </section>
@@ -1275,6 +1316,7 @@ function bindEvents(){
     $$('.pane').forEach(p=>p.classList.remove('active'));
     $('#pane-'+t.dataset.pane).classList.add('active');
     if(t.dataset.pane==='stats') renderStats();   // 面板显示后再按真实宽度重绘图表
+    if(t.dataset.pane==='backtest' && window.renderBacktest) window.renderBacktest();  // 首次打开时才计算回测
   });
   // board
   $('#redGrid').addEventListener('click', e=>{
@@ -1451,5 +1493,6 @@ function randomOne(){
   if(standalone && btn) btn.style.display = 'none';
 })();
 </script>
+<script src="backtest.js"></script>
 </body>
 </html>

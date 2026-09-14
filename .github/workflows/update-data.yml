@@ -57,8 +57,11 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # 注意:checkout 默认签出 github.sha(触发时的提交),而本工作流
+      # 刚在上一个 job 里推送了新提交,因此必须显式签出 main 的最新提交
       - uses: actions/checkout@v4
         with:
+          ref: main
           persist-credentials: false
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

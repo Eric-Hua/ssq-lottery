@@ -1,0 +1,68 @@
+name: Update lottery data
+
+# 双色球每周二 / 四 / 日 21:15(北京时间)开奖
+# UTC 14:00 = 北京 22:00(开奖后),UTC 17:00 为后备重试
+on:
+  schedule:
+    - cron: '0 14 * * 0,2,4'
+    - cron: '0 17 * * 0,2,4'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+# 与 pages.yml 共用 pages 组,避免两个部署同时进行
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: 拉取并提交开奖数据
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 拉取最新数据并重新生成 data.js
+        run: python3 scripts/update_data.py
+
+      - name: 有变化则提交并推送
+        id: commit
+        run: |
+          if git diff --quiet -- data.js; then
+            echo "数据无变化,跳过提交"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git config user.name "github-actions[bot]"
+            BOT_EMAIL="41898282+github-actions[bot]@users.noreply.github.com"
+            git config user.email "$BOT_EMAIL"
+            git add data.js
+            git commit -m "data: 自动更新开奖数据 ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "已推送更新后的数据"
+          fi
+
+  # 说明:GITHUB_TOKEN 触发的 push 不会触发 pages.yml,所以这里直接部署
+  deploy:
+    name: 重新部署站点
+    needs: update
+    if: needs.update.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4

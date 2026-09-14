@@ -17,28 +17,43 @@
 ## 文件
 
 - `index.html` — 应用主体(样式 + 逻辑,原生 JS,无任何外部依赖)
-- `data.js` — 500 期真实开奖数据(中国福彩官网 cwl.gov.cn,2023-05-25 ~ 2026-09-10 第 2026105 期,按期号升序)
+- `data.js` — 500 期真实开奖数据(中国福彩官网 cwl.gov.cn,按期号升序;由 GitHub Actions 自动更新,见下方「更新数据」)
+- `scripts/update_data.py` — 数据更新脚本(多数据源 + 增量合并)
+- `.github/workflows/update-data.yml` — 每周二/四/日自动更新并部署
 
 直接双击 `index.html` 即可使用,无需服务器、无需联网。
 
-## 更新数据
+## 更新数据(已自动化)
 
-`data.js` 由官方接口生成(可按需重跑)：
+**正常情况下你不需要做任何事。** 仓库里的 `scripts/update_data.py` + `.github/workflows/update-data.yml` 会在**每周二、四、日(双色球开奖日)北京时间 22:00 自动**:
+
+1. 拉取最新开奖数据
+2. 与现有数据按期号合并(保留 500 期历史,只补充新期次)
+3. 有新增则提交并自动重新部署站点(另一个 UTC 17:00 的任务作为后备重试)
+
+数据源(按顺序尝试,官网屏蔽境外机房 IP 时自动切到镜像):
+
+| # | 数据源 | 说明 |
+| --- | --- | --- |
+| 1 | 福彩官网 cwl.gov.cn | 最权威,但对 GitHub 机房 IP 返回 403 |
+| 2 | GitHub 镜像 `gudaoxuri/lottery_history` | 每日自动更新,境外可访问 |
+
+### 手动运行 / 本地验证
 
 ```bash
-curl -s -H "User-Agent: Mozilla/5.0" -H "Referer: https://www.cwl.gov.cn/" \
-  "https://www.cwl.gov.cn/cwl_admin/front/cwlkj/search/kjxx/findDrawNotice?name=ssq&issueCount=500&issueStart=&issueEnd=&dayStart=&dayEnd=" \
-  -o /tmp/ssq.json
-python3 - <<'EOF'
-import json
-records = []
-for d in json.load(open('/tmp/ssq.json'))['result']:
-    records.append([int(d['code']), d['date'][:10], [int(x) for x in d['red'].split(',')], int(d['blue'])])
-records.sort(key=lambda r: r[0])
-lines = ['  [%d,"%s",[%s],%d],' % (r[0], r[1], ','.join(map(str, r[2])), r[3]) for r in records]
-open('data.js','w').write('window.SSQ_DATA = [\n' + '\n'.join(lines) + '\n];\n')
-EOF
+# 自动选择数据源(本机可直连官网,会优先用官网)
+python3 scripts/update_data.py
+
+# 只走镜像源(模拟 GitHub Actions 的情况)
+python3 scripts/update_data.py --source mirror
+
+# 只走官网
+python3 scripts/update_data.py --source official
 ```
+
+脚本是「增量合并」的:内容没变化时不会写文件;有变化时才更新 `data.js`。手动运行后按平时的流程 `git commit && git push` 即可。
+
+也可在 GitHub 的 **Actions → Update lottery data → Run workflow** 手动触发一次云端更新。
 
 ## 安装到手机 / 桌面(PWA)
 

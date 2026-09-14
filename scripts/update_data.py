@@ -1,21 +1,35 @@
 #!/usr/bin/env python3
-"""从中国福利彩票官网拉取最新双色球开奖数据,重新生成 data.js。
+"""更新双色球开奖数据(data.js)。
 
-- 仅在内容发生变化时写入文件(内容不变则无 diff,工作流会跳过提交/部署)
-- 官方接口不稳定时会重试;重试全部失败则以退出码 1 结束(便于在 Actions 里看到失败)
+设计要点:
+- **多数据源 + 合并**:依次尝试各数据源,把结果与现有 data.js 里的记录按「期号」合并
+  (已有 500 期历史不会丢,只补充新期次),最后保留最近 COUNT 期。
+- **增量友好**:内容没变化就不写文件,工作流自然不会产生空提交。
+- 数据源:
+  1. 福彩官网(数据最权威,但会屏蔽境外机房 IP —— 本机/国内可直连)
+  2. GitHub 镜像 gudaoxuri/lottery_history(每日自动更新,境外可访问 —— 供 GitHub Actions 使用)
+
+用法:
+    python3 scripts/update_data.py            # 自动:尝试所有数据源
+    python3 scripts/update_data.py --source mirror
 """
 from __future__ import annotations
 
+import argparse
 import http.client
 import json
 import pathlib
+import re
 import sys
 import time
 import urllib.parse
 
-API = (
+OFFICIAL_API = (
     "https://www.cwl.gov.cn/cwl_admin/front/cwlkj/search/kjxx/findDrawNotice"
     "?name=ssq&issueCount=500&issueStart=&issueEnd=&dayStart=&dayEnd="
+)
+MIRROR_API = (
+    "https://raw.githubusercontent.com/gudaoxuri/lottery_history/main/data/ssq.json"
 )
 HEADERS = {
     "User-Agent": (
@@ -26,31 +40,26 @@ HEADERS = {
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "zh-CN,zh;q=0.9",
 }
-ALLOWED_SCHEME = "https"
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "data.js"
 COUNT = 500
+RECORD_RE = re.compile(
+    r"\[\s*(\d{7})\s*,\s*\"(\d{4}-\d{2}-\d{2})\"\s*,\s*\[([\d,\s]+)\]\s*,\s*(\d+)\s*\]"
+)
+
+Record = tuple[str, list[int], int]  # (date, reds, blue)
 
 
-def _require_https(url: str) -> str:
-    """只允许 https,避免 file:/自定义协议被意外使用。"""
+def _require_https(url: str) -> urllib.parse.ParseResult:
     parsed = urllib.parse.urlparse(url)
-    if parsed.scheme != ALLOWED_SCHEME or not parsed.netloc:
-        raise ValueError(f"接口地址必须是 {ALLOWED_SCHEME} 且含主机名: {url!r}")
-    return url
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError(f"只允许 https 且必须含主机名: {url!r}")
+    return parsed
 
 
-def _to_int(value: object, field: str, issue: object) -> int:
-    """把接口字段安全地转成 int,失败时给出可读的错误。"""
-    try:
-        return int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"期号 {issue} 的字段 {field} 不是整数: {value!r}") from exc
-
-
-def fetch_draws(timeout: int = 30) -> list[dict]:
-    """用 HTTPSConnection 直连官方接口(协议固定为 HTTPS,不接受其它 scheme)。"""
-    parsed = urllib.parse.urlparse(_require_https(API))
+def http_get_json(url: str, timeout: int = 30):
+    """用 HTTPSConnection 发 GET 并解析 JSON(scheme 固定为 https)。"""
+    parsed = _require_https(url)
     path = parsed.path + (f"?{parsed.query}" if parsed.query else "")
     conn = http.client.HTTPSConnection(parsed.netloc, timeout=timeout)
     try:
@@ -61,82 +70,161 @@ def fetch_draws(timeout: int = 30) -> list[dict]:
     finally:
         conn.close()
     if status != http.client.OK:
-        raise ValueError(f"接口返回 HTTP {status}: {raw[:120]!r}")
+        raise ValueError(f"HTTP {status}: {raw[:100]!r}")
     try:
-        payload = json.loads(raw)
+        return json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"接口返回不是合法 JSON: {raw[:120]!r}") from exc
-    result = payload.get("result")
-    if not result:
-        raise ValueError(f"接口未返回 result 字段: {str(payload)[:200]}")
-    return result
+        raise ValueError(f"返回不是合法 JSON: {raw[:100]!r}") from exc
 
 
-def fetch_with_retry(attempts: int = 6) -> list[dict]:
-    last_error: Exception | None = None
-    for attempt in range(1, attempts + 1):
+def _norm_issue(value: object) -> int | None:
+    """把不同数据源的期号统一成 7 位(如 26106 -> 2026106)。"""
+    digits = re.sub(r"\D", "", str(value))
+    if len(digits) == 5:
+        digits = "20" + digits
+    if len(digits) != 7:
+        return None
+    try:
+        return int(digits)
+    except ValueError:
+        return None
+
+
+def _norm_record(issue: int, date: object, reds: object, blue: object) -> Record | None:
+    try:
+        red_list = sorted(int(x) for x in reds)  # type: ignore[union-attr]
+        blue_int = int(blue)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    date_str = str(date)[:10]
+    if len(red_list) != 6 or len(set(red_list)) != 6:
+        return None
+    if not all(1 <= n <= 33 for n in red_list) or not 1 <= blue_int <= 16:
+        return None
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_str):
+        return None
+    return (date_str, red_list, blue_int)
+
+
+def fetch_official() -> dict[int, Record]:
+    payload = http_get_json(OFFICIAL_API)
+    rows = payload.get("result")
+    if not rows:
+        raise ValueError(f"未返回 result 字段: {str(payload)[:120]}")
+    out: dict[int, Record] = {}
+    for row in rows:
+        issue = _norm_issue(row.get("code"))
+        if issue is None:
+            continue
+        rec = _norm_record(issue, str(row.get("date", "")), str(row.get("red", "")).split(","), row.get("blue"))
+        if rec:
+            out[issue] = rec
+    if not out:
+        raise ValueError("官网数据解析后为空")
+    return out
+
+
+def fetch_mirror() -> dict[int, Record]:
+    payload = http_get_json(MIRROR_API)
+    rows = payload if isinstance(payload, list) else payload.get("data", [])
+    out: dict[int, Record] = {}
+    for row in rows:
+        issue = _norm_issue(row.get("issueNumber"))
+        if issue is None:
+            continue
+        rec = _norm_record(issue, row.get("drawDate"), row.get("redBalls"), row.get("blueBall"))
+        if rec:
+            out[issue] = rec
+    if not out:
+        raise ValueError("镜像数据解析后为空")
+    return out
+
+
+SOURCES = [("福彩官网", fetch_official), ("GitHub 镜像", fetch_mirror)]
+
+
+def load_existing() -> dict[int, Record]:
+    if not OUT.exists():
+        return {}
+    text = OUT.read_text(encoding="utf-8")
+    out: dict[int, Record] = {}
+    for issue_s, date_s, reds_s, blue_s in RECORD_RE.findall(text):
         try:
-            draws = fetch_draws()
-            print(f"[ok] 第 {attempt} 次请求成功,取得 {len(draws)} 期")
-            return draws
-        except (OSError, http.client.HTTPException, TimeoutError, ValueError) as exc:
-            last_error = exc
-            wait_seconds = min(5 * attempt, 30)
-            print(f"[warn] 第 {attempt}/{attempts} 次请求失败: {exc} —— {wait_seconds}s 后重试", flush=True)
-            time.sleep(wait_seconds)
-    raise SystemExit(f"[error] 拉取开奖数据失败(已重试 {attempts} 次): {last_error}")
-
-
-def build_js(draws: list[dict]) -> str:
-    records: list[tuple[int, str, list[int], int]] = []
-    for draw in draws:
-        issue = draw.get("code", "?")
-        try:
-            reds = sorted(_to_int(x, "red", issue) for x in str(draw.get("red", "")).split(","))
-        except ValueError as exc:
-            print(f"[warn] 跳过 {issue}: {exc}")
+            issue = int(issue_s)
+            reds = [int(x) for x in reds_s.split(",")]
+        except ValueError:
             continue
-        if len(reds) != 6 or len(set(reds)) != 6 or not all(1 <= n <= 33 for n in reds):
-            print(f"[warn] 跳过 {issue}: 红球不合法 {reds}")
-            continue
-        blue = _to_int(draw.get("blue"), "blue", issue)
-        if not 1 <= blue <= 16:
-            print(f"[warn] 跳过 {issue}: 蓝球不合法 {blue}")
-            continue
-        records.append((_to_int(issue, "code", issue), str(draw.get("date", ""))[:10], reds, blue))
+        rec = _norm_record(issue, date_s, reds, blue_s)
+        if rec:
+            out[issue] = rec
+    return out
 
-    if not records:
-        raise SystemExit("[error] 解析后没有任何有效数据")
 
-    records.sort(key=lambda r: r[0])
-    records = records[-COUNT:]
-
+def build_js(records: dict[int, Record]) -> str:
+    latest = sorted(records)[-COUNT:]
     lines = []
-    for issue, date, reds, blue in records:
+    for issue in latest:
+        date_s, reds, blue = records[issue]
         red_text = ", ".join(str(n) for n in reds)
-        lines.append(f'  [{issue}, "{date}", [{red_text}], {blue}],')
-
-    latest = records[-1][0]
+        lines.append(f'  [{issue}, "{date_s}", [{red_text}], {blue}],')
     header = (
-        f"// 双色球历史开奖数据(中国福利彩票官方数据, {len(records)}期, 按期号升序排列)\n"
-        f"// 格式: [期号, 日期, 红球数组, 蓝球]\n"
-        f"// 数据来源: www.cwl.gov.cn 更新至 {latest} 期 · 由 GitHub Actions 自动更新\n"
+        f"// 双色球历史开奖数据(中国福利彩票官方数据, {len(latest)}期, 按期号升序排列)\n"
+        "// 格式: [期号, 日期, 红球数组, 蓝球]\n"
+        f"// 数据来源: www.cwl.gov.cn 更新至 {latest[-1]} 期 · 由 GitHub Actions 自动更新\n"
     )
     return header + "window.SSQ_DATA = [\n" + "\n".join(lines) + "\n];\n"
 
 
 def main() -> int:
-    draws = fetch_with_retry()
-    new_content = build_js(draws)
-    old_content = OUT.read_text(encoding="utf-8") if OUT.exists() else ""
+    parser = argparse.ArgumentParser(description="更新双色球开奖数据")
+    parser.add_argument("--source", choices=["auto", "official", "mirror"], default="auto")
+    parser.add_argument("--attempts", type=int, default=3, help="每个数据源的重试次数")
+    args = parser.parse_args()
 
+    chosen = SOURCES if args.source == "auto" else [s for s in SOURCES if
+                                                   (s[0] == "福彩官网") == (args.source == "official")]
+
+    merged = load_existing()
+    before = len(merged)
+    succeeded: list[str] = []
+    errors: list[str] = []
+
+    for name, fetcher in chosen:
+        last_error: Exception | None = None
+        for attempt in range(1, args.attempts + 1):
+            try:
+                rows = fetcher()
+                added = {i: r for i, r in rows.items() if i not in merged}
+                merged.update(rows)
+                succeeded.append(f"{name}(+{len(added)})")
+                print(f"[ok] {name}:取到 {len(rows)} 期,其中新增 {len(added)} 期")
+                break
+            except (OSError, http.client.HTTPException, TimeoutError, ValueError) as exc:
+                last_error = exc
+                wait = min(5 * attempt, 20)
+                print(f"[warn] {name} 第 {attempt}/{args.attempts} 次失败: {exc} —— {wait}s 后重试", flush=True)
+                time.sleep(wait)
+        else:
+            errors.append(f"{name}: {last_error}")
+
+    if not succeeded:
+        print("[error] 所有数据源均失败:")
+        for line in errors:
+            print("   -", line)
+        return 1
+
+    if len(merged) == before:
+        print(f"[skip] 无新增期次(仍为 {before} 期),不写入文件")
+        return 0
+
+    new_content = build_js(merged)
+    old_content = OUT.read_text(encoding="utf-8") if OUT.exists() else ""
     if new_content == old_content:
-        print("[skip] 数据无变化,不写入文件")
+        print("[skip] 生成内容与现有文件一致,不写入")
         return 0
 
     OUT.write_text(new_content, encoding="utf-8")
-    latest = new_content.split("更新至 ", 1)[1].split(" 期", 1)[0]
-    print(f"[done] 已更新 data.js —— 最新期号 {latest},记录数 {new_content.count('  [')}")
+    print(f"[done] 已更新 data.js:{before} 期 -> {len(merged)} 期,最新 {max(merged)} 期 · 来源 {', '.join(succeeded)}")
     return 0
 
 

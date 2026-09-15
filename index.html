@@ -68,6 +68,9 @@ header{padding:26px 0 8px}
 .ball.blue{background:var(--blue-grad);box-shadow:0 3px 10px rgba(59,130,246,.35)}
 .ball.sm{width:24px;height:24px;font-size:11.5px}
 .ball.lg{width:34px;height:34px;font-size:14.5px}
+.ball.xs{width:20px;height:20px;font-size:9.5px;font-weight:600}
+.ball.gray{background:rgba(255,255,255,.055);color:var(--muted);box-shadow:none;border:1px solid rgba(255,255,255,.07)}
+.hist-reds{display:flex;flex-wrap:wrap;gap:3px;max-width:800px}
 
 /* ---------- nav tabs ---------- */
 nav.tabs{position:sticky;top:0;z-index:40;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
@@ -449,8 +452,9 @@ footer b{color:var(--gold)}
       <div class="table-scroll">
         <table class="hist">
           <thead><tr>
-            <th>期号</th><th>日期</th><th style="text-align:left">红球</th><th>蓝球</th>
-            <th>和值</th><th>奇偶</th><th>大小</th><th>三区</th><th>连号</th><th>重号</th>
+            <th>期号</th><th>日期</th>
+            <th style="text-align:left">红球 1–33 <span class="sub" style="font-weight:400">(红=当期开出 · 灰=未开出)</span></th>
+            <th>蓝球</th>
           </tr></thead>
           <tbody id="histBody"></tbody>
         </table>
@@ -1092,10 +1096,9 @@ function renderRecCombos(combos){
 /* ================= 历史表格 ================= */
 let histRows = [], histPage = 0, histDesc = true, PAGE = 20;
 function buildHistRows(){
-  histRows = DATA.map((d,i)=>({ d, st:STATS[i], i }));
+  histRows = DATA.map(d=>({ d }));
   if(histDesc) histRows.reverse();
 }
-function fmtConsec(consec){ return consec.map(r=>r.join('-')).join('、') || '—'; }
 function renderHist(){
   const search = $('#histSearch').value.trim();
   let rows = histRows;
@@ -1108,19 +1111,19 @@ function renderHist(){
   const start = histPage*PAGE, slice = rows.slice(start, start+PAGE);
   const tb = clearEl($('#histBody'));
   slice.forEach(r=>{
-    const d=r.d, s=r.st;
+    const d = r.d;
     const tr = el('tr');
     const mkTd = (cls)=>{ const td=el('td',cls||''); tr.appendChild(td); return td; };
     mkTd('iss').textContent = d[0];
     mkTd('dte').textContent = d[1];
-    const tdR = mkTd(); tdR.style.textAlign='left'; d[2].forEach(n=>tdR.appendChild(mkBall('red','sm',n)));
+    // 红球:1~33 全部展示 —— 当期开出的标红,未开出的置灰
+    const tdR = mkTd();
+    tdR.style.textAlign = 'left';
+    const grid = el('div','hist-reds');
+    const drawn = new Set(d[2]);
+    for(let n=1;n<=33;n++) grid.appendChild(mkBall(drawn.has(n) ? 'red' : 'gray', 'xs', n));
+    tdR.appendChild(grid);
     const tdB = mkTd(); tdB.appendChild(mkBall('blue','sm',d[3]));
-    mkTd().textContent = s.sum;
-    mkTd().textContent = s.odd+':'+(6-s.odd);
-    mkTd().textContent = s.big+':'+(6-s.big);
-    mkTd().textContent = s.zones.join(':');
-    mkTd().textContent = fmtConsec(s.consec);
-    mkTd().textContent = s.repeat||'—';
     tb.appendChild(tr);
   });
   $('#pgInfo').textContent = '第 '+(histPage+1)+' / '+totalPages+' 页';

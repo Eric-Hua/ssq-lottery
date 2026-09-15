@@ -394,41 +394,20 @@ footer b{color:var(--gold)}
             <div class="rb-title">📝 推荐单式方案(加权采样+和值/奇偶/大小/三区约束) <button class="mini-btn" id="regenComboBtn">🔄 换一批</button></div>
             <div class="rec-combos" id="recCombos"></div>
           </div>
-          <button class="btn btn-green" style="margin-top:14px;width:100%;justify-content:center" id="addRecToPool">➕ 全部加入备选池</button>
+          <button class="btn btn-green" style="margin-top:14px;width:100%;justify-content:center" id="addRecToCompare">➕ 把 5 注推荐加入区间对照</button>
           <div class="model-note">模型说明：单个号码的“统计指数”由①近30期出现频次 ②当前遗漏值所处的“出号窗口期”③长期总频次 ④尾数分布 加权合成；窗口期外的号码指数被压低。推荐组合按“指数加权随机 + 和值(均值±20)、奇偶比 2:4~4:2、大小比 2:4~4:2、三区各 1~3 码、连号 ≤1 对”的约束反复抽选后取最优。<b>此概率为历史统计参考值，绝不等于中奖概率。</b></div>
         </div>
 
-        <!-- 随机 -->
-        <div class="card">
-          <h3 class="blue"><span class="sec"></span>随机生成号码</h3>
-          <div class="rand-bar">
-            <label class="switch"><input type="checkbox" id="smartRandChk" checked> 智能约束(和值/奇偶/大小/三区在合理区间)</label>
-            <button class="btn btn-primary" id="rand1Btn">随机 1 注</button>
-            <button class="btn btn-blue" id="rand5Btn">随机 5 注</button>
-            <button class="btn btn-ghost" id="rand10Btn">随机 10 注</button>
-            <button class="btn btn-ghost" id="clearRandBtn">清空</button>
-          </div>
-          <div class="rand-list" id="randList"></div>
-          <button class="btn btn-green" style="margin-top:12px;width:100%;justify-content:center" id="addRandToPool">➕ 以上全部加入备选池</button>
-        </div>
-
-        <!-- 备选池 -->
-        <div class="card">
-          <h3 class="blue"><span class="sec"></span>我的备选池 <span class="sub">最多 10 注,方便打印/复制去投注</span></h3>
-          <div class="pool-grid" id="poolGrid"></div>
-          <div class="board-actions">
-            <button class="btn btn-blue" id="copyPoolBtn">📋 复制全部</button>
-            <button class="btn btn-ghost" id="clearPoolBtn">清空</button>
-          </div>
-        </div>
       </div>
     </div>
 
     <!-- 号码区间对照 -->
     <div class="card" style="margin-top:18px">
-      <h3 class="gold"><span class="sec"></span>号码区间对照 <span class="sub">自选号码 vs 近 5 期开奖 —— 红=选中/开出,灰=未选中/未开出</span></h3>
+      <h3 class="gold"><span class="sec"></span>号码区间对照 <span class="sub">自选 / 推荐柱 vs 近 5 期开奖 —— 红=选中/开出,灰=未选中/未开出</span></h3>
       <div class="legend-zone" style="margin-bottom:4px">区间:一区 <b>1–11</b> ｜ 二区 <b>12–22</b> ｜ 三区 <b>23–33</b> (分隔处留白);最右列为三区比</div>
+      <div class="board-actions" style="margin-top:6px;margin-bottom:10px" id="zoneToolbar"></div>
       <div id="zoneCompare"></div>
+      <div class="legend-zone" style="margin-top:8px">提示:点「我的自选」行里的<b>红球可直接删除该号</b>;行尾 ✕ 可删除整行(自选行删掉后可用上方按钮加回)。推荐柱最多 5 条。</div>
     </div>
   </section>
 
@@ -776,10 +755,10 @@ const state = {
   blueSel: new Set(),
   dan: new Set(),
   markKilled: true,
-  smartRand: true,
   linkMin: 2,                // 关联数(重号+邻号)下限,2-4 为近50期约80%覆盖的常见区间
   linkMax: 4,
-  pool: [],                  // [{reds, blue}]
+  showMine: true,            // 区间对照:是否显示「我的自选」行
+  compareRows: [],           // 区间对照:加入的推荐柱 [{reds, blue, key}]
 };
 
 /* ================= 重号 / 邻号 形态 ================= */
@@ -940,77 +919,111 @@ function genCombos(count, rS, blueS, meanSumT){
   return out;
 }
 
-/* ================= 备选池 ================= */
-function renderPool(){
-  const g = clearEl($('#poolGrid'));
-  if(state.pool.length===0){
-    const e=el('div','empty-pool');
-    e.textContent='备选池是空的。从「推荐方案」或「随机生成」里把心仪的注数加进来,最后一键复制去投注。';
-    g.appendChild(e); return;
-  }
-  state.pool.forEach((p,i)=>{
-    const row = el('div','pool-row');
-    const idx = el('span','idx'); idx.textContent=(i+1)+'.'; row.appendChild(idx);
-    const L = linkCounts(p.reds);
-    p.reds.forEach(n=>row.appendChild(mkBall('red','sm',n)));
-    const plus = el('span'); plus.style.color='var(--muted)'; plus.textContent='+'; row.appendChild(plus);
-    row.appendChild(mkBall('blue','sm',p.blue));
-    const meta = el('span','sub'); meta.textContent='重'+L.rep+' 邻'+L.adj;
-    meta.style.marginLeft='8px'; row.appendChild(meta);
-    const rm = el('button','mini-btn','✕'); rm.style.marginLeft='auto';
-    rm.onclick=()=>{ state.pool.splice(i,1); renderPool(); };
-    row.appendChild(rm);
-    g.appendChild(row);
-  });
-}
-function addPool(reds, blue, tip){
-  if(state.pool.length>=10){ toast('备选池最多 10 注,请先清理'); return; }
-  const key = [...reds].sort((a,b)=>a-b).join(',')+'-'+blue;
-  if(state.pool.some(p=>p.key===key)){ toast('该注已在备选池中'); return; }
-  state.pool.push({ reds:[...reds], blue, key });
-  renderPool(); if(tip) toast(tip);
+/* ================= 区间对照:推荐柱管理 ================= */
+const MAX_COMPARE_ROWS = 5;
+function addCompareRow(reds, blue, tip){
+  if(state.compareRows.length >= MAX_COMPARE_ROWS){ toast('最多 '+MAX_COMPARE_ROWS+' 条推荐柱,请先删除'); return false; }
+  const sorted = [...reds].sort((a,b)=>a-b);
+  const key = sorted.join(',');
+  if(state.compareRows.some(r=>r.key===key)) return false;
+  state.compareRows.push({ reds:sorted, blue, key });
+  renderZoneCompare(); renderZoneToolbar();
+  if(tip) toast(tip);
+  return true;
 }
 
 /* ================= 选号板 ================= */
 function isKilledRed(n){ return killCache.red.has(n); }
 function isKilledBlue(n){ return killCache.blue.has(n); }
 
-/* ================= 号码区间对照(自选 vs 近5期) ================= */
+/* ================= 号码区间对照(自选 / 推荐柱 vs 近5期) ================= */
+function zoneRowHTML(r, box){
+  const row = el('div','zone-row');
+  const lab = el('div','zone-label');
+  const t1 = el('div', null, r.label);
+  t1.style.fontWeight = r.kind ? '700' : '600';
+  if(r.kind === 'mine') t1.style.color = 'var(--gold)';
+  else if(r.kind === 'rec') t1.style.color = 'var(--cyan)';
+  lab.appendChild(t1);
+  lab.appendChild(el('div','sub', r.sub));
+  row.appendChild(lab);
+
+  const grid = el('div','hist-reds');
+  grid.style.maxWidth = 'none';
+  grid.style.flex = '1';
+  for(let n=1;n<=33;n++){
+    const on = r.set.has(n);
+    const b = mkBall(on ? 'red' : 'gray', 'xs', n);
+    if(r.kind === 'mine' && on){
+      b.title = '红球 '+pad2(n)+' · 点击从自选删除';
+      b.style.cursor = 'pointer';
+      b.onclick = ()=>{ state.redSel.delete(n); renderBoard(); updateValid(); };
+    } else {
+      b.title = '红球 '+pad2(n)+(on ? ' · 选中/开出' : '');
+    }
+    if(n===11 || n===22) b.style.marginRight = '12px';
+    grid.appendChild(b);
+  }
+  row.appendChild(grid);
+
+  const z = [0,0,0];
+  r.set.forEach(n=>{ z[n<=11?0:n<=22?1:2]++; });
+  row.appendChild(el('div','zone-count', z.join(' : ')));
+
+  if(r.kind){
+    const del = el('button','mini-btn','✕');
+    del.title = r.kind === 'mine' ? '隐藏「我的自选」行' : '删除该推荐柱';
+    del.onclick = ()=>{
+      if(r.kind === 'mine') state.showMine = false;
+      else state.compareRows.splice(r.index, 1);
+      renderZoneCompare(); renderZoneToolbar();
+      toast(r.kind === 'mine' ? '已隐藏「我的自选」行' : '已删除该推荐柱');
+    };
+    row.appendChild(del);
+  }
+  box.appendChild(row);
+}
+
 function renderZoneCompare(){
   const box = $('#zoneCompare');
   if(!box) return;
-  const xs = [...state.redSel].sort((a,b)=>a-b);
-  const rows = [{ label:'我的自选', sub: xs.length ? '选号板已选 '+xs.length+' 个红球' : '未选择 —— 点击左侧选号板', set:new Set(xs), mine:true }];
-  DATA.slice(-5).reverse().forEach(d=>{
-    rows.push({ label:'第 '+d[0]+' 期', sub:d[1], set:new Set(d[2]), mine:false });
-  });
   clearEl(box);
-  rows.forEach(r=>{
-    const row = el('div','zone-row');
-    const lab = el('div','zone-label');
-    const t1 = el('div', null, r.label);
-    t1.style.fontWeight = r.mine ? '700' : '600';
-    if(r.mine) t1.style.color = 'var(--gold)';
-    lab.appendChild(t1);
-    lab.appendChild(el('div','sub', r.sub));
-    row.appendChild(lab);
-
-    const grid = el('div','hist-reds');
-    grid.style.maxWidth = 'none';
-    grid.style.flex = '1';
-    for(let n=1;n<=33;n++){
-      const on = r.set.has(n);
-      const b = mkBall(on ? 'red' : 'gray', 'xs', n, '红球 '+pad2(n)+(on ? ' · 选中/开出' : ''));
-      if(n===11 || n===22) b.style.marginRight = '12px';
-      grid.appendChild(b);
-    }
-    row.appendChild(grid);
-
-    const z = [0,0,0];
-    r.set.forEach(n=>{ z[n<=11?0:n<=22?1:2]++; });
-    row.appendChild(el('div','zone-count', z.join(' : ')));
-    box.appendChild(row);
+  if(state.showMine){
+    const xs = [...state.redSel].sort((a,b)=>a-b);
+    zoneRowHTML({ label:'我的自选',
+      sub: xs.length ? ('已选 '+xs.length+' 个 · 点红球可删除') : '未选择 —— 点击左侧选号板',
+      set:new Set(xs), kind:'mine' }, box);
+  }
+  state.compareRows.forEach((c,i)=>{
+    zoneRowHTML({ label:'推荐 '+(i+1), sub:'推荐柱 '+(i+1)+' · ✕ 可删除',
+      set:new Set(c.reds), kind:'rec', index:i }, box);
   });
+  DATA.slice(-5).reverse().forEach(d=>{
+    zoneRowHTML({ label:'第 '+d[0]+' 期', sub:d[1], set:new Set(d[2]), kind:null }, box);
+  });
+}
+
+function renderZoneToolbar(){
+  const bar = $('#zoneToolbar');
+  if(!bar) return;
+  clearEl(bar);
+  const mk = (cls, txt, fn)=>{ const b=el('button', cls, txt); b.style.fontSize='12.5px'; b.style.padding='6px 12px'; b.onclick=fn; bar.appendChild(b); };
+  if(!state.showMine){
+    mk('btn btn-ghost','➕ 我的自选', ()=>{ state.showMine = true; renderZoneCompare(); renderZoneToolbar(); });
+  }
+  mk('btn btn-blue','➕ 加入推荐 5 注', ()=>{
+    const rS = redScores(), bS = blueScores();
+    let n = 0;
+    genCombos(5, rS, bS, meanSum).forEach(c=>{ if(addCompareRow(c.reds, c.blue)) n++; });
+    if(n === 0) toast('推荐柱已满或与已有柱重复');
+  });
+  if(state.compareRows.length){
+    mk('btn btn-ghost','清空推荐柱', ()=>{ state.compareRows = []; renderZoneCompare(); renderZoneToolbar(); });
+  }
+  const info = el('span','sub');
+  info.style.marginLeft = '4px';
+  info.textContent = '推荐柱 '+state.compareRows.length+'/'+MAX_COMPARE_ROWS + (state.showMine ? '' : ' · 「我的自选」已隐藏');
+  bar.appendChild(info);
 }
 
 function renderBoard(){
@@ -1143,7 +1156,7 @@ function fillSingle(reds, blueText){
   syncModeTabs(); renderBoard(); updateValid();
 }
 
-/* ================= 随机生成 ================= */
+/* ================= 机选辅助 ================= */
 function randomRed6(pool, smart){
   if(!smart){ const p=[...pool]; const r=[]; while(r.length<6 && p.length){ const i=Math.floor(Math.random()*p.length); r.push(p.splice(i,1)[0]); } return r.sort((a,b)=>a-b); }
   const rS = redScores();
@@ -1164,35 +1177,7 @@ function randomRed6(pool, smart){
   }
   return best ? best.sort((a,b)=>a-b) : [];
 }
-function randomBlue1(pool, smart){
-  if(!smart) return pool[Math.floor(Math.random()*pool.length)];
-  const bS = blueScores();
-  return weightedPick(pool, bS, 1)[0];
-}
-function genRandNotes(count){
-  const kc = computeKills();
-  const redPool = ALL_RED.filter(n=>!kc.red.has(n)); const useRed = redPool.length>=6 ? redPool : ALL_RED.slice();
-  const bluePool = ALL_BLUE.filter(n=>!kc.blue.has(n)); const useBlue = bluePool.length ? bluePool : ALL_BLUE.slice();
-  const smart = state.smartRand;
-  return Array.from({length:count},()=>({ reds:randomRed6(useRed,smart), blue:randomBlue1(useBlue,smart) }));
-}
-function renderRandList(lst){
-  const list = clearEl($('#randList'));
-  lst.forEach((p,i)=>{
-    const row = el('div','rand-row');
-    const idx = el('span','idx'); idx.textContent='第'+(i+1)+'注'; row.appendChild(idx);
-    p.reds.forEach(n=>row.appendChild(mkBall('red','',n)));
-    row.appendChild(mkBall('blue','',p.blue));
-    const L = linkCounts(p.reds);
-    const sum = el('span','sub'); sum.style.marginLeft='auto';
-    sum.textContent = '和值 '+p.reds.reduce((a,b)=>a+b,0)+' · 重'+L.rep+' 邻'+L.adj;
-    row.appendChild(sum);
-    const cp = el('button','mini-btn','复制'); cp.onclick=()=>copyText([...p.reds,p.blue].map(pad2).join(' ')); row.appendChild(cp);
-    const use = el('button','mini-btn','填入选号板'); use.onclick=()=>{ fillSingle(p.reds,p.blue); toast('已填入选号板'); }; row.appendChild(use);
-    list.appendChild(row);
-  });
-}
-let genRandCache = [];
+
 
 /* ================= 推荐渲染 ================= */
 function renderRecommend(){
@@ -1228,7 +1213,9 @@ function renderRecommend(){
 
   renderRecCombos(genCombos(5, rS, bS, meanSum));
 }
+let lastRecCombos = [];
 function renderRecCombos(combos){
+  lastRecCombos = combos;
   const wrap = clearEl($('#recCombos'));
   const maxFit = Math.max(...combos.map(x=>x.fit));
   combos.forEach((c,i)=>{
@@ -1240,7 +1227,7 @@ function renderRecCombos(combos){
     sc.textContent = '指数 '+((c.fit+3)/(maxFit+6.001)*100).toFixed(0)+' · 和值 '+c.reds.reduce((a,b)=>a+b,0)+' · 重'+L.rep+' 邻'+L.adj;
     row.appendChild(sc);
     const fill = el('button','mini-btn','填入选号板'); fill.onclick=()=>{ fillSingle(c.reds,c.blue); toast('已填入选号板'); }; row.appendChild(fill);
-    const add = el('button','mini-btn','加入备选池'); add.onclick=()=>addPool(c.reds,c.blue,'已加入备选池'); row.appendChild(add);
+    const add = el('button','mini-btn','加入对照'); add.onclick=()=>addCompareRow(c.reds,c.blue,'已加入区间对照'); row.appendChild(add);
     wrap.appendChild(row);
   });
 }
@@ -1521,31 +1508,14 @@ function bindEvents(){
     const blue = [...bPool].sort((a,b)=>bS[b]-bS[a])[0];
     fillSingle(top6, blue); updateValid(); toast('已按智能推荐填入选号板');
   };
-  // random tab
-  $('#smartRandChk').onchange = e=>{ state.smartRand = e.target.checked; };
-  const doRand = (n)=>{ genRandCache = genRandNotes(n); renderRandList(genRandCache); };
-  $('#rand1Btn').onclick = ()=>doRand(1);
-  $('#rand5Btn').onclick = ()=>doRand(5);
-  $('#rand10Btn').onclick = ()=>doRand(10);
-  $('#clearRandBtn').onclick = ()=>{ genRandCache=[]; clearEl($('#randList')); };
-  $('#addRandToPool').onclick = ()=>{
-    if(!genRandCache.length) return toast('请先生成随机号码');
-    genRandCache.forEach(p=>addPool(p.reds, p.blue));
-    if(state.pool.length) toast('已全部加入备选池');
-  };
-  // pool
-  $('#copyPoolBtn').onclick = ()=>{
-    if(!state.pool.length) return toast('备选池为空');
-    const txt = state.pool.map((p,i)=> (i+1)+'. ' + [...p.reds,p.blue].map(pad2).join(' ')).join('\n');
-    copyText(txt);
-  };
-  $('#clearPoolBtn').onclick = ()=>{ state.pool=[]; renderPool(); };
   // recommend
   $('#regenComboBtn').onclick = renderRecommend;
-  $('#addRecToPool').onclick = ()=>{
-    const kc = computeKills(); const rS = redScores(); const bS = blueScores();
-    genCombos(5, rS, bS, meanSum).forEach(c=>addPool(c.reds, c.blue));
-    if(state.pool.length) toast('推荐方案已加入备选池');
+  $('#addRecToCompare').onclick = ()=>{
+    if(!lastRecCombos.length) return toast('暂无推荐方案');
+    let n = 0;
+    lastRecCombos.forEach(c=>{ if(addCompareRow(c.reds, c.blue)) n++; });
+    if(n) toast('已把 '+n+' 注推荐加入区间对照');
+    else toast('推荐柱已满或与已有柱重复');
   };
   // kill page
   $('#killAllBtn').onclick = ()=>{ KILL_RED.concat(KILL_BLUE).forEach(f=>killEnabled.add(f.id)); renderKill(); renderBoard(); renderRecommend(); };
@@ -1616,7 +1586,7 @@ function randomOne(){
   syncModeTabs();
   renderBoard();
   updateValid();
-  renderPool();
+  renderZoneToolbar();
   renderRecommend();
   renderKill();
   renderStats();

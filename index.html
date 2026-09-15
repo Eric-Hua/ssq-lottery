@@ -71,8 +71,8 @@ header{padding:26px 0 8px}
 .ball.xs{width:20px;height:20px;font-size:9.5px;font-weight:600}
 .ball.gray{background:rgba(255,255,255,.055);color:var(--muted);box-shadow:none;border:1px solid rgba(255,255,255,.07)}
 .hist-reds{display:flex;flex-wrap:wrap;gap:3px;max-width:800px}
-.ball.xs.rep{box-shadow:0 0 0 2px var(--gold)}
-.ball.xs.adj{box-shadow:0 0 0 2px var(--cyan)}
+.ball.rep{box-shadow:0 0 0 2px var(--gold)}
+.ball.adj{box-shadow:0 0 0 2px var(--cyan)}
 .lg-sw{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:middle;margin:0 3px}
 .chip-row{display:inline-flex;flex-wrap:wrap;gap:3px;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:11px;padding:3px}
 .chip{padding:6px 13px;border-radius:8px;font-size:12.5px;color:var(--muted);cursor:pointer;font-weight:600;transition:.15s;white-space:nowrap;user-select:none}
@@ -408,6 +408,14 @@ footer b{color:var(--gold)}
         <!-- 备选池 -->
         <div class="card">
           <h3 class="blue"><span class="sec"></span>我的备选池 <span class="sub">最多 10 注,方便打印/复制去投注</span></h3>
+          <div class="board-label" style="margin-top:2px">
+            <b>红球覆盖图(1–33)</b><span class="sub" id="poolCoverInfo"></span>
+          </div>
+          <div class="hist-reds" id="poolGrid33" style="max-width:none"></div>
+          <div class="sub" id="poolLegend" style="margin-top:8px;line-height:1.9"></div>
+          <div class="board-label" style="margin-top:14px">
+            <b>已加入的注数</b><span class="sub" id="poolCountInfo"></span>
+          </div>
           <div class="pool-grid" id="poolGrid"></div>
           <div class="board-actions">
             <button class="btn btn-blue" id="copyPoolBtn">📋 复制全部</button>
@@ -928,7 +936,43 @@ function genCombos(count, rS, blueS, meanSumT){
 
 /* ================= 备选池 ================= */
 function renderPool(){
+  // ---------- 1–33 红球覆盖图:标注与「近 6 期」开奖号码的关系 ----------
+  const RECENT = 6;
+  const recent = DATA.slice(-RECENT);
+  const recentSet = new Set();
+  recent.forEach(d=>d[2].forEach(n=>recentSet.add(n)));
+  const adjSet = new Set();
+  for(let n=1;n<=33;n++){
+    if(recentSet.has(n)) continue;
+    if(recentSet.has(n-1) || recentSet.has(n+1)) adjSet.add(n);
+  }
+  const cnt = {};
+  state.pool.forEach(p=>p.reds.forEach(n=>{ cnt[n] = (cnt[n]||0) + 1; }));
+
+  const grid33 = clearEl($('#poolGrid33'));
+  for(let n=1;n<=33;n++){
+    const inPool = (cnt[n]||0) > 0;
+    let cls = inPool ? 'red' : 'gray';
+    let rel = '与近6期无关';
+    if(recentSet.has(n)){ cls += ' rep'; rel = '近6期已开出'; }
+    else if(adjSet.has(n)){ cls += ' adj'; rel = '与近6期相邻'; }
+    grid33.appendChild(mkBall(cls, 'sm', n,
+      '红球 '+pad2(n)+' · 备选池中 '+(cnt[n]||0)+' 注 · '+rel));
+  }
+  const covered = Object.keys(cnt).filter(n=>cnt[n]>0).length;
+  $('#poolCoverInfo').textContent = '已覆盖 '+covered+'/33 个号码'+(state.pool.length? ' · '+state.pool.length+' 注':'');
+
+  const lg = clearEl($('#poolLegend'));
+  const addSw = (bg, text)=>{ const s=el('span','lg-sw'); s.style.background=bg; lg.appendChild(s); lg.appendChild(document.createTextNode(text)); };
+  addSw('var(--gold)','近6期已开出');
+  lg.appendChild(document.createTextNode('\u00a0\u00b7\u00a0'));
+  addSw('var(--cyan)','与近6期相邻');
+  lg.appendChild(document.createTextNode('\u00a0\u00b7\u00a0'));
+  lg.appendChild(document.createTextNode('实心红＝已在备选池,灰＝未选  ·  近6期:第 '+recent[0][0]+' ~ '+recent[recent.length-1][0]+' 期'));
+
+  // ---------- 已加入的注数 ----------
   const g = clearEl($('#poolGrid'));
+  $('#poolCountInfo').textContent = state.pool.length + ' / 10 注';
   if(state.pool.length===0){
     const e=el('div','empty-pool');
     e.textContent='备选池是空的。从「推荐方案」或「随机生成」里把心仪的注数加进来,最后一键复制去投注。';
@@ -937,9 +981,12 @@ function renderPool(){
   state.pool.forEach((p,i)=>{
     const row = el('div','pool-row');
     const idx = el('span','idx'); idx.textContent=(i+1)+'.'; row.appendChild(idx);
+    const L = linkCounts(p.reds);
     p.reds.forEach(n=>row.appendChild(mkBall('red','sm',n)));
     const plus = el('span'); plus.style.color='var(--muted)'; plus.textContent='+'; row.appendChild(plus);
     row.appendChild(mkBall('blue','sm',p.blue));
+    const meta = el('span','sub'); meta.textContent='重'+L.rep+' 邻'+L.adj;
+    meta.style.marginLeft='8px'; row.appendChild(meta);
     const rm = el('button','mini-btn','✕'); rm.style.marginLeft='auto';
     rm.onclick=()=>{ state.pool.splice(i,1); renderPool(); };
     row.appendChild(rm);

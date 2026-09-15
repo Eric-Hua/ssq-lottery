@@ -71,6 +71,14 @@ header{padding:26px 0 8px}
 .ball.xs{width:20px;height:20px;font-size:9.5px;font-weight:600}
 .ball.gray{background:rgba(255,255,255,.055);color:var(--muted);box-shadow:none;border:1px solid rgba(255,255,255,.07)}
 .hist-reds{display:flex;flex-wrap:wrap;gap:3px;max-width:800px}
+.ball.xs.rep{box-shadow:0 0 0 2px var(--gold)}
+.ball.xs.adj{box-shadow:0 0 0 2px var(--cyan)}
+.lg-sw{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:middle;margin:0 3px}
+.chip-row{display:inline-flex;flex-wrap:wrap;gap:3px;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:11px;padding:3px}
+.chip{padding:6px 13px;border-radius:8px;font-size:12.5px;color:var(--muted);cursor:pointer;font-weight:600;transition:.15s;white-space:nowrap;user-select:none}
+.chip:hover{color:var(--txt)}
+.chip.active{background:linear-gradient(145deg,#ffd76a,#f59e0b);color:#3a2404;box-shadow:0 3px 10px rgba(251,191,36,.3)}
+.chip .tag{font-size:10px;opacity:.8;margin-left:3px;font-weight:400}
 
 /* ---------- nav tabs ---------- */
 nav.tabs{position:sticky;top:0;z-index:40;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
@@ -306,6 +314,18 @@ footer b{color:var(--gold)}
 
   <!-- ============ 智能选号 ============ -->
   <section class="pane active" id="pane-select">
+    <div class="card" style="margin-bottom:18px">
+      <h3 class="gold"><span class="sec"></span>重号 / 邻号形态 <span class="sub" id="linkSub"></span></h3>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+        <div class="chip-row" id="linkChips"></div>
+        <span class="sub" id="linkInfo"></span>
+      </div>
+      <div class="model-note" style="margin-top:10px">
+        <b>重号</b> = 与上期相同的号码;<b>邻号</b> = 与上期某个号差 ±1(与重号互斥);<b>关联数</b> = 重号 + 邻号。
+        对比近 50 期实测与 30 万次随机模拟:关联数落在 <b>2~4 个</b> 的期数约占 80%,而 0 个与 6 个都很罕见(约 2% / 0.6%)。
+        选这个区间只是让号码“形态正常”,<b>并不提高中奖概率</b>——它减少的是你买的注数,不是风险。
+      </div>
+    </div>
     <div class="grid2">
       <!-- 选号板 -->
       <div class="card">
@@ -453,7 +473,7 @@ footer b{color:var(--gold)}
         <table class="hist">
           <thead><tr>
             <th>期号</th><th>日期</th>
-            <th style="text-align:left">红球 1–33 <span class="sub" style="font-weight:400">(红=当期开出 · 灰=未开出)</span></th>
+            <th style="text-align:left">红球 1–33 <span class="sub" style="font-weight:400">(红=开出 · 灰=未开出 · <span class="lg-sw" style="background:var(--gold)"></span>重号 · <span class="lg-sw" style="background:var(--cyan)"></span>邻号)</span></th>
             <th>蓝球</th>
           </tr></thead>
           <tbody id="histBody"></tbody>
@@ -743,8 +763,66 @@ const state = {
   dan: new Set(),
   markKilled: true,
   smartRand: true,
+  linkMin: 2,                // 关联数(重号+邻号)下限,2-4 为近50期约80%覆盖的常见区间
+  linkMax: 4,
   pool: [],                  // [{reds, blue}]
 };
+
+/* ================= 重号 / 邻号 形态 ================= */
+// 与最新一期(上期)的关系:重号(相同)/ 邻号(差 ±1),两者互斥
+function linkCounts(reds, base){
+  const prev = new Set(base || lastDraw[2]);
+  let rep = 0, adj = 0;
+  reds.forEach(x=>{
+    if(prev.has(x)) rep++;
+    else if(prev.has(x-1) || prev.has(x+1)) adj++;
+  });
+  return { rep, adj, link: rep + adj };
+}
+function inLinkShape(reds){
+  const L = linkCounts(reds);
+  return L.link >= state.linkMin && L.link <= state.linkMax;
+}
+const LINK_PRESETS = [
+  { label:'不限', min:0, max:6, tag:'' },
+  { label:'2–4', min:2, max:4, tag:'推荐' },
+  { label:'1–3', min:1, max:3, tag:'' },
+  { label:'0–2', min:0, max:2, tag:'' },
+  { label:'3–5', min:3, max:5, tag:'' },
+  { label:'4–6', min:4, max:6, tag:'' },
+];
+function renderLinkChips(){
+  const box = $('#linkChips');
+  if(!box) return;
+  clearEl(box);
+  LINK_PRESETS.forEach(p=>{
+    const on = state.linkMin===p.min && state.linkMax===p.max;
+    const c = el('div','chip'+(on?' active':''));
+    c.textContent = p.label;
+    if(p.tag){ const t = el('span','tag',p.tag); c.appendChild(t); }
+    c.onclick = ()=>{
+      state.linkMin = p.min; state.linkMax = p.max;
+      renderLinkChips(); renderRecommend(); updateValid();
+      toast('形态约束:关联数 '+(p.label==='不限'?'不限':p.label+' 个'));
+    };
+    box.appendChild(c);
+  });
+  const sub = $('#linkSub');
+  if(sub){
+    const cur = (state.linkMin===0 && state.linkMax===6) ? '不限' : state.linkMin+'–'+state.linkMax+' 个';
+    sub.textContent = '与最新一期(第 '+lastDraw[0]+' 期)的关系 · 当前约束:关联数 '+cur;
+  }
+  const info = $('#linkInfo');
+  if(info){
+    if(state.redSel.size){
+      const L = linkCounts([...state.redSel]);
+      info.textContent = '当前选号板:重 '+L.rep+' 个 · 邻 '+L.adj+' 个(关联 '+L.link+')';
+    } else {
+      const L = linkCounts(lastDraw[2]);
+      info.textContent = '上期(第 '+lastDraw[0]+' 期)红球:'+lastDraw[2].map(pad2).join(' ')+' · 蓝球 '+pad2(lastDraw[3]);
+    }
+  }
+}
 
 /* ================= 推荐模型 ================= */
 function normVal(v, min, max){ if(max-min<1e-9) return 0.5; return Math.max(0, Math.min(1, (v-min)/(max-min))); }
@@ -796,6 +874,10 @@ function fitCombo(combo, rS, meanSumT){
   let pairs=0; for(let i=1;i<sorted.length;i++) if(sorted[i]===sorted[i-1]+1) pairs++;
   if(pairs>1) f -= 0.8;
   f += combo.reduce((a,n)=>a + (rS[n]||0), 0) * 6;
+  // 重号/邻号形态:落在所选区间给奖励,越界给惩罚(与随机筛选偏好一致)
+  const L = linkCounts(combo);
+  f += inLinkShape(combo) ? 1.2 : -2.5;
+  if(L.link === 0 || L.link === 6) f -= 0.8;
   return f;
 }
 function weightedPick(pool, w, k){
@@ -810,15 +892,16 @@ function weightedPick(pool, w, k){
   return out;
 }
 function genCombo(pool, rS, meanSumT){
-  for(let t=0;t<800;t++){
-    const c = weightedPick(pool, rS, 6);
-    if(fitCombo(c, rS, meanSumT) > 0.6) return c;
-  }
   let best=null, bf=-1e9;
   for(let t=0;t<1500;t++){
     const c = weightedPick(pool, rS, 6);
     const f = fitCombo(c, rS, meanSumT);
-    if(f>bf){ bf=f; best=c; }
+    if(f > 0.6 && inLinkShape(c)) return c;      // 约束满足且评分合格
+    if(f > bf){ bf = f; best = c; }
+  }
+  for(let t=0;t<1500;t++){                       // 兜底:优先保证形态符合
+    const c = weightedPick(pool, rS, 6);
+    if(inLinkShape(c)) return c;
   }
   return best;
 }
@@ -838,7 +921,7 @@ function genCombos(count, rS, blueS, meanSumT){
     seen.add(key);
     const b = bluePool.length ? weightedPick(bluePool, blueS, 1)[0] : ALL_BLUE[Math.floor(Math.random()*16)];
     const fit = fitCombo(r6, rS, meanSumT);
-    out.push({ reds:r6, blue:b, fit, key });
+    out.push({ reds:[...r6].sort((a,b)=>a-b), blue:b, fit, key });
   }
   return out;
 }
@@ -905,6 +988,7 @@ function renderBoard(){
   renderDanChips();
   updateCounts();
   renderCurSel();
+  renderLinkChips();
 }
 
 function renderDanChips(){
@@ -974,6 +1058,8 @@ function updateValid(){
     }
     text = t;
   }
+  const Lk = linkCounts([...state.redSel]);
+  if(state.redSel.size) text += '  ·  形态:重 '+Lk.rep+' 邻 '+Lk.adj+' (关联 '+Lk.link+')';
   clearEl(msg);
   if(ok){ const s=el('span'); s.style.color='var(--green)'; s.textContent=text; msg.appendChild(s); }
   else msg.textContent = text;
@@ -1003,18 +1089,24 @@ function fillSingle(reds, blueText){
 
 /* ================= 随机生成 ================= */
 function randomRed6(pool, smart){
-  if(!smart){ const p=[...pool]; const r=[]; while(r.length<6){ const i=Math.floor(Math.random()*p.length); r.push(p.splice(i,1)[0]); } return r; }
+  if(!smart){ const p=[...pool]; const r=[]; while(r.length<6 && p.length){ const i=Math.floor(Math.random()*p.length); r.push(p.splice(i,1)[0]); } return r.sort((a,b)=>a-b); }
   const rS = redScores();
-  let best=null, bf=-1e9, tried=0;
-  while(tried<400){
-    tried++;
+  let best=null, bf=-1e9;
+  for(let t=0;t<1500;t++){
     const pool2 = [...pool]; const c=[];
-    while(c.length<6){ c.push(pool2.splice(Math.floor(Math.random()*pool2.length),1)[0]); }
+    while(c.length<6 && pool2.length){ c.push(pool2.splice(Math.floor(Math.random()*pool2.length),1)[0]); }
+    if(c.length<6) continue;
     const f = fitCombo(c, rS, meanSum);
-    if(f>bf){ bf=f; best=c.reverse(); }
-    if(f>0.7) return c;
+    if(f > 0.7 && inLinkShape(c)) return c.sort((a,b)=>a-b);
+    if(f > bf){ bf = f; best = c; }
   }
-  return best;
+  for(let t=0;t<1500;t++){                       // 兜底:优先保证形态符合
+    const pool2 = [...pool]; const c=[];
+    while(c.length<6 && pool2.length){ c.push(pool2.splice(Math.floor(Math.random()*pool2.length),1)[0]); }
+    if(c.length<6) continue;
+    if(inLinkShape(c)) return c.sort((a,b)=>a-b);
+  }
+  return best ? best.sort((a,b)=>a-b) : [];
 }
 function randomBlue1(pool, smart){
   if(!smart) return pool[Math.floor(Math.random()*pool.length)];
@@ -1035,7 +1127,10 @@ function renderRandList(lst){
     const idx = el('span','idx'); idx.textContent='第'+(i+1)+'注'; row.appendChild(idx);
     p.reds.forEach(n=>row.appendChild(mkBall('red','',n)));
     row.appendChild(mkBall('blue','',p.blue));
-    const sum = el('span','sub'); sum.style.marginLeft='auto'; sum.textContent='和值 '+p.reds.reduce((a,b)=>a+b,0); row.appendChild(sum);
+    const L = linkCounts(p.reds);
+    const sum = el('span','sub'); sum.style.marginLeft='auto';
+    sum.textContent = '和值 '+p.reds.reduce((a,b)=>a+b,0)+' · 重'+L.rep+' 邻'+L.adj;
+    row.appendChild(sum);
     const cp = el('button','mini-btn','复制'); cp.onclick=()=>copyText([...p.reds,p.blue].map(pad2).join(' ')); row.appendChild(cp);
     const use = el('button','mini-btn','填入选号板'); use.onclick=()=>{ fillSingle(p.reds,p.blue); toast('已填入选号板'); }; row.appendChild(use);
     list.appendChild(row);
@@ -1084,8 +1179,9 @@ function renderRecCombos(combos){
     const row = el('div','rec-combo');
     c.reds.forEach(n=>row.appendChild(mkBall('red','',n)));
     row.appendChild(mkBall('blue','',c.blue));
+    const L = linkCounts(c.reds);
     const sc = el('span','score');
-    sc.textContent = '指数 '+((c.fit+3)/(maxFit+6.001)*100).toFixed(0)+' · 和值 '+c.reds.reduce((a,b)=>a+b,0);
+    sc.textContent = '指数 '+((c.fit+3)/(maxFit+6.001)*100).toFixed(0)+' · 和值 '+c.reds.reduce((a,b)=>a+b,0)+' · 重'+L.rep+' 邻'+L.adj;
     row.appendChild(sc);
     const fill = el('button','mini-btn','填入选号板'); fill.onclick=()=>{ fillSingle(c.reds,c.blue); toast('已填入选号板'); }; row.appendChild(fill);
     const add = el('button','mini-btn','加入备选池'); add.onclick=()=>addPool(c.reds,c.blue,'已加入备选池'); row.appendChild(add);
@@ -1096,7 +1192,7 @@ function renderRecCombos(combos){
 /* ================= 历史表格 ================= */
 let histRows = [], histPage = 0, histDesc = true, PAGE = 20;
 function buildHistRows(){
-  histRows = DATA.map(d=>({ d }));
+  histRows = DATA.map((d,i)=>({ d, i }));
   if(histDesc) histRows.reverse();
 }
 function renderHist(){
@@ -1116,12 +1212,22 @@ function renderHist(){
     const mkTd = (cls)=>{ const td=el('td',cls||''); tr.appendChild(td); return td; };
     mkTd('iss').textContent = d[0];
     mkTd('dte').textContent = d[1];
-    // 红球:1~33 全部展示 —— 当期开出的标红,未开出的置灰
+    // 红球:1~33 全部展示 —— 开出标红、未开置灰;金圈=重号(与上期相同)、青圈=邻号(与上期差±1)
     const tdR = mkTd();
     tdR.style.textAlign = 'left';
     const grid = el('div','hist-reds');
     const drawn = new Set(d[2]);
-    for(let n=1;n<=33;n++) grid.appendChild(mkBall(drawn.has(n) ? 'red' : 'gray', 'xs', n));
+    const prev = r.i > 0 ? DATA[r.i-1][2] : null;
+    const prevSet = prev ? new Set(prev) : null;
+    for(let n=1;n<=33;n++){
+      let cls = 'gray';
+      if(drawn.has(n)){
+        if(prevSet && prevSet.has(n)) cls = 'red rep';
+        else if(prevSet && (prevSet.has(n-1) || prevSet.has(n+1))) cls = 'red adj';
+        else cls = 'red';
+      }
+      grid.appendChild(mkBall(cls, 'xs', n));
+    }
     tdR.appendChild(grid);
     const tdB = mkTd(); tdB.appendChild(mkBall('blue','sm',d[3]));
     tb.appendChild(tr);

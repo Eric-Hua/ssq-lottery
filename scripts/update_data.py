@@ -106,6 +106,8 @@ def fetch_500() -> dict[int, Record]:
     这个源在 GitHub 机房也能访问,且当晚就有数据。
     """
     raw = _https_get(API_500, 30, HEADERS_HTML).decode("utf-8", "ignore")
+    # 每行开头有 <!--<td>n</td>--> 注释单元格,必须先删掉,否则所有列会错位
+    raw = re.sub(r"<!--.*?-->", "", raw, flags=re.S)
     m = re.search(r'id="tdata"(.*?)</tbody>', raw, re.S)
     body = m.group(1) if m else raw
     out: dict[int, Record] = {}

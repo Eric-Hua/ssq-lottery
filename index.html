@@ -403,7 +403,7 @@ footer b{color:var(--gold)}
 
     <!-- 号码区间对照 -->
     <div class="card" style="margin-top:18px">
-      <h3 class="gold"><span class="sec"></span>号码区间对照 <span class="sub">自选 / 推荐柱 vs 近 5 期开奖 —— 红=选中/开出,灰=未选中/未开出</span></h3>
+      <h3 class="gold"><span class="sec"></span>号码区间对照 <span class="sub">自选 / 推荐柱 vs 近 10 期开奖 —— 红=选中/开出,灰=未选中/未开出</span></h3>
       <div class="legend-zone" style="margin-bottom:4px">区间:一区 <b>1–11</b> ｜ 二区 <b>12–22</b> ｜ 三区 <b>23–33</b> (分隔处留白);最右列为三区比</div>
       <div class="board-actions" style="margin-top:6px;margin-bottom:10px" id="zoneToolbar"></div>
       <div id="zoneCompare"></div>
@@ -936,7 +936,7 @@ function addCompareRow(reds, blue, tip){
 function isKilledRed(n){ return killCache.red.has(n); }
 function isKilledBlue(n){ return killCache.blue.has(n); }
 
-/* ================= 号码区间对照(自选 / 推荐柱 vs 近5期) ================= */
+/* ================= 号码区间对照(自选 / 推荐柱 vs 近10期) ================= */
 function zoneRowHTML(r, box){
   const row = el('div','zone-row');
   const lab = el('div','zone-label');
@@ -996,7 +996,7 @@ function renderZoneCompare(){
     zoneRowHTML({ label:'推荐 '+(i+1), sub:'推荐柱 '+(i+1)+' · ✕ 可删除',
       set:new Set(c.reds), kind:'rec', index:i }, box);
   });
-  DATA.slice(-5).reverse().forEach(d=>{
+  DATA.slice(-10).reverse().forEach(d=>{
     zoneRowHTML({ label:'第 '+d[0]+' 期', sub:d[1], set:new Set(d[2]), kind:null }, box);
   });
 }

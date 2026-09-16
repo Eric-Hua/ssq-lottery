@@ -945,7 +945,7 @@ function zoneRowHTML(r, box){
   if(r.kind === 'mine') t1.style.color = 'var(--gold)';
   else if(r.kind === 'rec') t1.style.color = 'var(--cyan)';
   lab.appendChild(t1);
-  lab.appendChild(el('div','sub', r.sub));
+  if(r.sub) lab.appendChild(el('div','sub', r.sub));
   row.appendChild(lab);
 
   const grid = el('div','hist-reds');
@@ -990,9 +990,7 @@ function renderZoneCompare(){
   clearEl(box);
   if(state.showMine){
     const xs = [...state.redSel].sort((a,b)=>a-b);
-    zoneRowHTML({ label:'我的自选',
-      sub: xs.length ? ('已选 '+xs.length+' 个 · 点红球可删除') : '未选择 —— 点击左侧选号板',
-      set:new Set(xs), kind:'mine' }, box);
+    zoneRowHTML({ label:'我的自选', sub:'', set:new Set(xs), kind:'mine' }, box);
   }
   state.compareRows.forEach((c,i)=>{
     zoneRowHTML({ label:'推荐 '+(i+1), sub:'推荐柱 '+(i+1)+' · ✕ 可删除',

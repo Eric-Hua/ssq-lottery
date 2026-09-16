@@ -122,7 +122,9 @@ def fetch_500() -> dict[int, Record]:
         if rec:
             out[issue] = rec
     if not out:
-        raise ValueError(f"500.com 页面解析后为空(响应 {len(raw)} 字节,首段 {raw[:90]!r})")
+        raise ValueError(
+            f"500.com 页面解析后为空(响应 {len(raw)} 字节,首段 {raw[:90]!r})"
+        )
     return out
 
 
@@ -246,8 +248,10 @@ def main() -> int:
     if args.source == "auto":
         chosen = SOURCES
     else:
-        key = "福彩官网" if args.source == "official" else (
-            "500.com" if args.source == "500" else "GitHub 镜像"
+        key = (
+            "福彩官网"
+            if args.source == "official"
+            else ("500.com" if args.source == "500" else "GitHub 镜像")
         )
         chosen = [s for s in SOURCES if s[0] == key]
 
